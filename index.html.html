@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>三角記憶翻牌戰</title>
+    <style>
+        body { font-family: sans-serif; background-color: #f0f4f8; display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+        .header { text-align: center; margin-bottom: 20px; }
+        h1 { color: #2c3e50; margin: 0 0 10px 0; }
+        .controls { display: flex; gap: 15px; justify-content: center; margin-bottom: 20px; }
+        button { padding: 10px 20px; font-size: 16px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; color: white; }
+        .btn-login { background-color: #4285F4; }
+        .btn-start { background-color: #2ecc71; display: none; }
+        .game-info { display: flex; justify-content: space-between; width: 100%; max-width: 600px; font-size: 18px; font-weight: bold; color: #e74c3c; margin-bottom: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; max-width: 600px; width: 100%; display: none; }
+        .card { aspect-ratio: 1; cursor: pointer; position: relative; transform-style: preserve-3d; transition: transform 0.5s; }
+        .card.flipped, .card.matched { transform: rotateY(180deg); cursor: default; }
+        .card-face { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; display: flex; align-items: center; justify-content: center; border-radius: 10px; font-size: 18px; font-weight: bold; padding: 5px; box-sizing: border-box; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        .card-front { background-color: #3498db; }
+        .card-back { background-color: white; color: #2c3e50; transform: rotateY(180deg); border: 2px solid #3498db; }
+        .card.matched .card-back { background-color: #f1c40f; color: white; border-color: #f39c12; }
+        .leaderboard { margin-top: 30px; width: 100%; max-width: 400px; background: white; padding: 20px; border-radius: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.05); display: none; }
+        .leaderboard h2 { text-align: center; color: #34495e; margin-top: 0; }
+        .rank-item { display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #eee; }
+    </style>
+
+    <!-- Firebase 連線區塊 -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { getAuth, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, query, orderBy, limit, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+        // ⚠️ 等一下要把金鑰貼在這裡
+        const firebaseConfig = {
+  apiKey: "AIzaSyD5TCsm03LPSR4zRRavUN8jR2d_-dI0giI",
+  authDomain: "math-summer-camp-37878.firebaseapp.com",
+  projectId: "math-summer-camp-37878",
+  storageBucket: "math-summer-camp-37878.firebasestorage.app",
+  messagingSenderId: "913471474686",
+  appId: "1:913471474686:web:d16c1d51aa407ce418ceaf"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const provider = new GoogleAuthProvider();
+        const db = getFirestore(app);
+
+        window.executeFirebaseLogin = async function() {
+            try {
+                const result = await signInWithPopup(auth, provider);
+                window.playerName = result.user.displayName;
+                
+                document.getElementById('loginBtn').style.display = 'none';
+                document.getElementById('startBtn').style.display = 'block';
+                document.getElementById('playerInfo').innerText = `👋 歡迎，${window.playerName}！`;
+                document.getElementById('leaderboard').style.display = 'block';
+                
+                listenToLeaderboard();
+            } catch (error) {
+                alert("登入失敗，請稍後再試！");
+            }
+        };
+
+        window.uploadScore = async function(name, score) {
+            if (score <= 0) return;
+            try {
+                await addDoc(collection(db, "scores"), { name: name, score: score, timestamp: new Date() });
+            } catch (e) { console.error("上傳失敗", e); }
+        };
+
+        function listenToLeaderboard() {
+            const q = query(collection(db, "scores"), orderBy("score", "desc"), limit(5));
+            onSnapshot(q, (snapshot) => {
+                const rankList = document.getElementById('rankList');
+                rankList.innerHTML = '';
+                let rank = 1;
+                snapshot.forEach((doc) => {
+                    const data = doc.data();
+                    rankList.innerHTML += `<div class="rank-item"><span>${rank}. ${data.name}</span><span>${data.score} 分</span></div>`;
+                    rank++;
+                });
+            });
+        }
+    </script>
+</head>
+<body>
+
+    <div class="header">
+        <h1>🃏 三角記憶翻牌戰</h1>
+        <p>找出對應的角度、弧度或三角比數值！</p>
+    </div>
+
+    <div class="controls">
+        <button id="loginBtn" class="btn-login" onclick="executeFirebaseLogin()">Google 帳號登入</button>
+        <button id="startBtn" class="btn-start" onclick="startGame()">開始挑戰 (60秒)</button>
+    </div>
+
+    <div id="playerInfo" style="margin-bottom: 15px; font-weight: bold; color: #2c3e50; text-align: center;"></div>
+
+    <div class="game-info" id="gameInfo" style="display: none;">
+        <span>積分: <span id="score">0</span></span>
+        <span>時間: <span id="time">60</span>s</span>
+    </div>
+
+    <div class="grid" id="grid"></div>
+
+    <div class="leaderboard" id="leaderboard">
+        <h2>🏆 本週神人榜</h2>
+        <div id="rankList"><div class="rank-item">載入中...</div></div>
+    </div>
+
+<script>
+    // 遊戲邏輯區
+    const trigData = [
+        { deg: "0°", rad: "0", sin: "0", cos: "1", tan: "0" },
+        { deg: "30°", rad: "π/6", sin: "1/2", cos: "√3/2", tan: "√3/3" },
+        { deg: "45°", rad: "π/4", sin: "√2/2", cos: "√2/2", tan: "1" },
+        { deg: "60°", rad: "π/3", sin: "√3/2", cos: "1/2", tan: "√3" },
+        { deg: "90°", rad: "π/2", sin: "1", cos: "0", tan: "不存在" },
+        { deg: "120°", rad: "2π/3", sin: "√3/2", cos: "-1/2", tan: "-√3" },
+        { deg: "135°", rad: "3π/4", sin: "√2/2", cos: "-√2/2", tan: "-1" },
+        { deg: "150°", rad: "5π/6", sin: "1/2", cos: "-√3/2", tan: "-√3/3" },
+        { deg: "180°", rad: "π", sin: "0", cos: "-1", tan: "0" },
+        { deg: "210°", rad: "7π/6", sin: "-1/2", cos: "-√3/2", tan: "√3/3" },
+        { deg: "225°", rad: "5π/4", sin: "-√2/2", cos: "-√2/2", tan: "1" },
+        { deg: "240°", rad: "4π/3", sin: "-√3/2", cos: "-1/2", tan: "√3" },
+        { deg: "270°", rad: "3π/2", sin: "-1", cos: "0", tan: "不存在" },
+        { deg: "300°", rad: "5π/3", sin: "-√3/2", cos: "1/2", tan: "-√3" },
+        { deg: "315°", rad: "7π/4", sin: "-√2/2", cos: "√2/2", tan: "-1" },
+        { deg: "330°", rad: "11π/6", sin: "-1/2", cos: "√3/2", tan: "-√3/3" }
+    ];
+
+    let currentCards = [], flippedCards = [], matchedPairs = 0, score = 0, timeLeft = 60, timer, isFlipping = false;
+
+    function generateDeck() {
+        const deck = [];
+        for (let i = 0; i < 6; i++) {
+            const angle = trigData[Math.floor(Math.random() * trigData.length)];
+            const type = Math.floor(Math.random() * 3) + 1;
+            let cardA, cardB;
+            if (type === 1) { cardA = angle.deg; cardB = angle.rad; }
+            else {
+                const funcName = ["sin", "cos", "tan"][Math.floor(Math.random() * 3)];
+                if (angle.tan === "不存在" && funcName === "tan") { cardA = `sin(${angle.deg})`; cardB = angle.sin; }
+                else { cardA = `${funcName}(${Math.random() > 0.5 ? angle.rad : angle.deg})`; cardB = angle[funcName]; }
+            }
+            deck.push({ id: i, text: cardA }, { id: i, text: cardB });
+        }
+        for (let i = deck.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [deck[i], deck[j]] = [deck[j], deck[i]];
+        }
+        return deck;
+    }
+
+    function startGame() {
+        clearInterval(timer); score = 0; timeLeft = 60; matchedPairs = 0;
+        document.getElementById('score').innerText = score;
+        document.getElementById('time').innerText = timeLeft;
+        document.getElementById('gameInfo').style.display = 'flex';
+        renderGrid();
+        timer = setInterval(() => {
+            timeLeft--; document.getElementById('time').innerText = timeLeft;
+            if (timeLeft <= 0) endGame();
+        }, 1000);
+    }
+
+    function renderGrid() {
+        const grid = document.getElementById('grid');
+        grid.innerHTML = ''; grid.style.display = 'grid';
+        currentCards = generateDeck();
+        currentCards.forEach((card, index) => {
+            const cardEl = document.createElement('div');
+            cardEl.className = 'card'; cardEl.dataset.pairId = card.id;
+            cardEl.innerHTML = `<div class="card-face card-front"></div><div class="card-face card-back">${card.text}</div>`;
+            cardEl.addEventListener('click', () => handleCardClick(cardEl));
+            grid.appendChild(cardEl);
+        });
+    }
+
+    function handleCardClick(cardEl) {
+        if (isFlipping || cardEl.classList.contains('flipped') || cardEl.classList.contains('matched')) return;
+        cardEl.classList.add('flipped'); flippedCards.push(cardEl);
+        if (flippedCards.length === 2) { isFlipping = true; checkMatch(); }
+    }
+
+    function checkMatch() {
+        const [card1, card2] = flippedCards;
+        if (card1.dataset.pairId === card2.dataset.pairId) {
+            score += 20; matchedPairs++;
+            document.getElementById('score').innerText = score;
+            card1.classList.add('matched'); card2.classList.add('matched');
+            flippedCards = []; isFlipping = false;
+            if (matchedPairs === 6) {
+                setTimeout(() => { timeLeft += 10; renderGrid(); matchedPairs = 0; }, 800);
+            }
+        } else {
+            score = Math.max(0, score - 5);
+            document.getElementById('score').innerText = score;
+            setTimeout(() => { card1.classList.remove('flipped'); card2.classList.remove('flipped'); flippedCards = []; isFlipping = false; }, 1000);
+        }
+    }
+
+    function endGame() {
+        clearInterval(timer); document.getElementById('grid').style.display = 'none';
+        alert(`⏰ 時間到！最終積分：${score} 分`);
+        if (window.uploadScore && window.playerName) uploadScore(window.playerName, score);
+    }
+</script>
+</body>
+</html>
