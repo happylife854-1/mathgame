@@ -281,85 +281,41 @@
     }
 
     // --- 對對碰核心邏輯開始 ---
-    function generateDeck() {
+function generateDeck() {
         const deck = [];
         for (let i = 0; i < 6; i++) {
             const angle = trigData[Math.floor(Math.random() * trigData.length)];
             const type = Math.floor(Math.random() * 3) + 1;
-            let cardA, cardB;
+            let cardA, cardB, matchKey;
+            
             if (type === 1) {
-                cardA = angle.deg; cardB = angle.rad;
+                cardA = angle.deg; 
+                cardB = angle.rad;
+                // 將角度設為獨立的配對群組，確保 0° 不會跟數值的 0 混淆
+                matchKey = "angle_" + angle.deg; 
             } else {
                 const funcName = ["sin", "cos", "tan"][Math.floor(Math.random() * 3)];
                 if (angle.tan === "不存在" && funcName === "tan") {
-                    cardA = `sin(${angle.deg})`; cardB = angle.sin;
+                    cardA = `sin(${angle.deg})`; 
+                    cardB = angle.sin;
+                    matchKey = "val_" + angle.sin;
                 } else {
                     const isRad = Math.random() > 0.5;
                     cardA = `${funcName}(${isRad ? angle.rad : angle.deg})`;
                     cardB = angle[funcName];
+                    matchKey = "val_" + angle[funcName];
                 }
             }
-            deck.push({ id: i, text: cardA }, { id: i, text: cardB });
+            
+            // 讓卡片認「數值(matchKey)」而不是認「流水號(i)」
+            deck.push({ id: matchKey, text: cardA }, { id: matchKey, text: cardB });
         }
+        
         for (let i = deck.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [deck[i], deck[j]] = [deck[j], deck[i]];
         }
         return deck;
-    }
-
-    function renderGrid() {
-        const grid = document.getElementById('grid');
-        grid.innerHTML = ''; 
-        currentCards = generateDeck();
-        
-        currentCards.forEach((card, index) => {
-            const cardEl = document.createElement('div');
-            cardEl.className = 'card'; cardEl.dataset.pairId = card.id;
-            cardEl.innerHTML = `
-                <div class="card-face card-front"></div>
-                <div class="card-face card-back">${card.text}</div>
-            `;
-            cardEl.addEventListener('click', () => handleCardClick(cardEl));
-            grid.appendChild(cardEl);
-        });
-    }
-
-    function handleCardClick(cardEl) {
-        if (isFlipping || cardEl.classList.contains('flipped') || cardEl.classList.contains('matched')) return;
-        cardEl.classList.add('flipped');
-        flippedCards.push(cardEl);
-        if (flippedCards.length === 2) {
-            isFlipping = true;
-            checkMatch();
-        }
-    }
-
-    function checkMatch() {
-        const [card1, card2] = flippedCards;
-        if (card1.dataset.pairId === card2.dataset.pairId) {
-            sessionScore += 20; 
-            matchedPairs++;
-            document.getElementById('sessionScoreDisplay').innerText = sessionScore;
-            
-            card1.classList.add('matched'); card2.classList.add('matched');
-            flippedCards = []; isFlipping = false;
-            
-            if (matchedPairs === 6) {
-                setTimeout(() => {
-                    timeLeft += 10; // 全對獎勵時間
-                    renderGrid(); matchedPairs = 0;
-                }, 800);
-            }
-        } else {
-            sessionScore = Math.max(0, sessionScore - 5); // 翻錯扣分
-            document.getElementById('sessionScoreDisplay').innerText = sessionScore;
-            
-            setTimeout(() => {
-                card1.classList.remove('flipped'); card2.classList.remove('flipped');
-                flippedCards = []; isFlipping = false;
-            }, 1000);
-        }
     }
     // --- 對對碰核心邏輯結束 ---
 
