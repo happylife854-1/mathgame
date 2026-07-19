@@ -24,10 +24,10 @@
         .btn-class:active { transform: translateY(4px); box-shadow: 0 0 0 #8e44ad; }
         .btn-test { background-color: #7f8c8d; box-shadow: 0 4px 0 #707b7c; }
         
-        .stats { display: flex; justify-content: space-between; font-size: 18px; font-weight: bold; color: #e74c3c; margin-bottom: 15px; border-bottom: 2px dashed #eee; padding-bottom: 10px; }
+        .stats { display: flex; justify-content: space-between; font-size: 18px; font-weight: bold; color: #e74c3c; margin-bottom: 10px; border-bottom: 2px dashed #eee; padding-bottom: 10px; }
         
         /* 翻牌遊戲專屬網格 */
-        .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; width: 100%; perspective: 1000px; }
+        .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; width: 100%; perspective: 1000px; margin-top: 15px; }
         .card { aspect-ratio: 1; cursor: pointer; position: relative; transform-style: preserve-3d; transition: transform 0.5s; }
         .card.flipped, .card.matched { transform: rotateY(180deg); cursor: default; }
         .card-face { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; display: flex; align-items: center; justify-content: center; border-radius: 10px; font-size: 20px; font-weight: bold; text-align: center; padding: 5px; box-sizing: border-box; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
@@ -112,7 +112,7 @@
                 
                 <h3>輸入身分開始翻牌</h3>
                 <p style="color: #e74c3c; font-size: 15px; font-weight: bold; margin-bottom: 15px;">
-                    ⚠️ 提示：配對成功 +20 分，翻錯倒扣 5 分！
+                    ⚠️ 提示：配對成功 +20 分，分數可累加<br>但請不要亂猜，因為翻錯會倒扣 5 分！
                 </p>
 
                 <input type="text" id="accInput" placeholder="請輸入「高二」學號 (範例: 20205)">
@@ -126,8 +126,12 @@
                     <span>挑戰者: <span id="playerNameDisplay" style="color:#3498db;"></span></span>
                     <span>時間: <span id="time">60</span>s</span>
                 </div>
-                <div style="font-size:14px; color:#7f8c8d; text-align:left; margin-bottom:15px;">本次得分: <span id="sessionScoreDisplay">0</span></div>
+                <div style="display: flex; justify-content: space-between; align-items: center; background: #ecf0f1; padding: 10px; border-radius: 8px;">
+                    <span style="font-size:16px; color:#2c3e50; font-weight:bold;">👀 題目就在牌裡，請翻出對應卡片！</span>
+                    <span style="font-size:16px; color:#e74c3c; font-weight:bold;">得分: <span id="sessionScoreDisplay">0</span></span>
+                </div>
                 
+                <!-- 這裡是翻牌的戰場 -->
                 <div class="grid" id="grid"></div>
             </div>
 
@@ -239,6 +243,8 @@
         
         playerAcc = document.getElementById('accInput').value.trim();
         playerName = document.getElementById('nameInput').value.trim();
+        
+        // 防呆：確保不留空
         if (!playerAcc || !playerName) return alert("請輸入「高二班級+座號」與「姓名」！");
 
         localStorage.setItem('savedAcc', playerAcc);
@@ -254,6 +260,7 @@
             else cloudTotalScore = 0;
         } catch (e) {
             console.error("讀取分數失敗", e);
+            cloudTotalScore = 0; // 若讀取失敗仍確保遊戲能玩
         }
 
         startRound();
@@ -280,8 +287,8 @@
         }, 1000);
     }
 
-    // --- 對對碰核心邏輯開始 ---
-function generateDeck() {
+    // --- 完美除錯版：對對碰卡片生成邏輯 ---
+    function generateDeck() {
         const deck = [];
         for (let i = 0; i < 6; i++) {
             const angle = trigData[Math.floor(Math.random() * trigData.length)];
@@ -291,7 +298,7 @@ function generateDeck() {
             if (type === 1) {
                 cardA = angle.deg; 
                 cardB = angle.rad;
-                // 將角度設為獨立的配對群組，確保 0° 不會跟數值的 0 混淆
+                // 將角度設為獨立群組
                 matchKey = "angle_" + angle.deg; 
             } else {
                 const funcName = ["sin", "cos", "tan"][Math.floor(Math.random() * 3)];
@@ -306,18 +313,78 @@ function generateDeck() {
                     matchKey = "val_" + angle[funcName];
                 }
             }
-            
-            // 讓卡片認「數值(matchKey)」而不是認「流水號(i)」
+            // 使用 matchKey 讓程式判斷數值相等的牌即可消除
             deck.push({ id: matchKey, text: cardA }, { id: matchKey, text: cardB });
         }
         
+        // 打亂牌組
         for (let i = deck.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [deck[i], deck[j]] = [deck[j], deck[i]];
         }
         return deck;
     }
-    // --- 對對碰核心邏輯結束 ---
+
+    function renderGrid() {
+        const grid = document.getElementById('grid');
+        grid.innerHTML = ''; 
+        currentCards = generateDeck();
+        
+        currentCards.forEach((card, index) => {
+            const cardEl = document.createElement('div');
+            cardEl.className = 'card'; 
+            cardEl.dataset.pairId = card.id;
+            cardEl.innerHTML = `
+                <div class="card-face card-front"></div>
+                <div class="card-face card-back">${card.text}</div>
+            `;
+            cardEl.addEventListener('click', () => handleCardClick(cardEl));
+            grid.appendChild(cardEl);
+        });
+    }
+
+    function handleCardClick(cardEl) {
+        // 防止重複點擊同一張牌或已翻開的牌
+        if (isFlipping || cardEl.classList.contains('flipped') || cardEl.classList.contains('matched')) return;
+        
+        cardEl.classList.add('flipped');
+        flippedCards.push(cardEl);
+        if (flippedCards.length === 2) {
+            isFlipping = true;
+            checkMatch();
+        }
+    }
+
+    function checkMatch() {
+        const [card1, card2] = flippedCards;
+        
+        // 透過 dataset.pairId (也就是上面的 matchKey) 進行比對
+        if (card1.dataset.pairId === card2.dataset.pairId) {
+            sessionScore += 20; 
+            matchedPairs++;
+            document.getElementById('sessionScoreDisplay').innerText = sessionScore;
+            
+            card1.classList.add('matched'); card2.classList.add('matched');
+            flippedCards = []; isFlipping = false;
+            
+            // 6 對全消完，自動刷新下一盤並加時
+            if (matchedPairs === 6) {
+                setTimeout(() => {
+                    timeLeft += 10; 
+                    renderGrid(); 
+                    matchedPairs = 0;
+                }, 800);
+            }
+        } else {
+            sessionScore = Math.max(0, sessionScore - 5); 
+            document.getElementById('sessionScoreDisplay').innerText = sessionScore;
+            
+            setTimeout(() => {
+                card1.classList.remove('flipped'); card2.classList.remove('flipped');
+                flippedCards = []; isFlipping = false;
+            }, 1000);
+        }
+    }
 
     async function endGame() {
         clearInterval(timer);
@@ -330,6 +397,7 @@ function generateDeck() {
             document.getElementById('finalTotalScore').innerText = cloudTotalScore;
 
             try {
+                // 將成績上傳到「當前選擇班級」的資料庫
                 const docRef = window.fbDoc(window.db, currentDbCollection, playerAcc);
                 await window.fbSetDoc(docRef, {
                     name: playerName,
